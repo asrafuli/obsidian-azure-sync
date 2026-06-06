@@ -91,7 +91,8 @@ resource "azurerm_storage_container" "vault" {
 # ─────────────────────────────────────────────────────────────────────────────
 
 resource "azuread_application" "sync" {
-  display_name = "obsidian-vault-sync-${var.environment}"
+  display_name     = "obsidian-vault-sync-${var.environment}"
+  sign_in_audience = "AzureADandPersonalMicrosoftAccount"
 
   # Allow public client flows so the Python client can use device code / ROPC
   fallback_public_client_enabled = true

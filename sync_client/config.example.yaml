@@ -3,7 +3,7 @@
 # Values come from `terraform output sync_config_snippet` after deployment.
 
 # ── Azure AD ──────────────────────────────────────────────────────────────
-tenant_id: "00000000-0000-0000-0000-000000000000"
+tenant_id: "common"
 client_id: "00000000-0000-0000-0000-000000000000"
 
 # Leave blank for interactive device-code login (recommended for personal machines).
