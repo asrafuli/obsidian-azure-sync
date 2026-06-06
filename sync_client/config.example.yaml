@@ -1,0 +1,20 @@
+# Obsidian Azure Sync — client configuration
+# Copy this file to ~/.obsidian-sync/config.yaml and fill in your values.
+# Values come from `terraform output sync_config_snippet` after deployment.
+
+# ── Azure AD ──────────────────────────────────────────────────────────────
+tenant_id: "00000000-0000-0000-0000-000000000000"
+client_id: "00000000-0000-0000-0000-000000000000"
+
+# Leave blank for interactive device-code login (recommended for personal machines).
+# Set to the secret value (from Key Vault) for headless / server use.
+# Can also be set via OBSIDIAN_SYNC_CLIENT_SECRET env var.
+client_secret: ""
+
+# ── Storage ───────────────────────────────────────────────────────────────
+storage_account_name: "stobsvaultxxxxxxxx"
+container_name: "obsidian-vault"
+
+# ── Local vault ───────────────────────────────────────────────────────────
+# Absolute path to your Obsidian vault root.
+vault_path: "~/Documents/MyVault"
