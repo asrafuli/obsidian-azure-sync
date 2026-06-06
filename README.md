@@ -31,10 +31,141 @@ GitHub Actions  ──(OIDC)──►  Terraform  ──►  Azure resources
 ## Prerequisites
 
 - Azure subscription
-- Azure CLI (`az`) installed locally
-- Terraform ≥ 1.5
+- Azure CLI (`az`) installed and logged in (`az login`)
 - Python ≥ 3.10
-- A GitHub repository to host this project
+
+---
+
+## Manual CLI deployment
+
+Use this if you want to skip Terraform and provision everything directly with the Azure CLI.
+
+### Step 1 — Set variables
+
+```bash
+LOCATION="eastus"
+ENVIRONMENT="prod"
+SUFFIX=$(openssl rand -hex 4)
+RG="rg-obsidian-sync-${ENVIRONMENT}"
+STORAGE_ACCOUNT="stobsvault${SUFFIX}"
+CONTAINER_NAME="obsidian-vault"
+APP_NAME="obsidian-vault-sync-${ENVIRONMENT}"
+KV_NAME="kv-obsidian-${SUFFIX}"
+SUBSCRIPTION_ID=$(az account show --query id -o tsv)
+TENANT_ID=$(az account show --query tenantId -o tsv)
+```
+
+### Step 2 — Resource group
+
+```bash
+az group create -n $RG -l $LOCATION
+```
+
+### Step 3 — Storage account + blob container
+
+```bash
+az storage account create \
+  -n $STORAGE_ACCOUNT \
+  -g $RG \
+  -l $LOCATION \
+  --sku Standard_GRS \
+  --kind StorageV2 \
+  --allow-shared-key-access false
+
+az storage account blob-service-properties update \
+  --account-name $STORAGE_ACCOUNT \
+  --resource-group $RG \
+  --enable-versioning true \
+  --delete-retention-days 30 \
+  --container-delete-retention-days 7
+
+az storage container create \
+  -n $CONTAINER_NAME \
+  --account-name $STORAGE_ACCOUNT \
+  --auth-mode login
+```
+
+### Step 4 — Azure AD app registration + service principal
+
+```bash
+APP_ID=$(az ad app create \
+  --display-name $APP_NAME \
+  --sign-in-audience AzureADandPersonalMicrosoftAccount \
+  --is-fallback-public-client true \
+  --query appId -o tsv)
+
+# Grant Azure Storage user_impersonation permission
+az ad app permission add \
+  --id $APP_ID \
+  --api e406a681-f3d4-42a8-90b6-c2b029497af1 \
+  --api-permissions 03e0da56-190b-40ad-a80c-ea378c433f7f=Scope
+
+SP_OBJECT_ID=$(az ad sp create --id $APP_ID --query id -o tsv)
+```
+
+### Step 5 — Grant the app access to storage
+
+```bash
+az role assignment create \
+  --assignee $SP_OBJECT_ID \
+  --role "Storage Blob Data Contributor" \
+  --scope /subscriptions/$SUBSCRIPTION_ID/resourceGroups/$RG/providers/Microsoft.Storage/storageAccounts/$STORAGE_ACCOUNT
+```
+
+### Step 6 — Key Vault + client secret
+
+```bash
+DEPLOYER_OBJECT_ID=$(az ad signed-in-user show --query id -o tsv)
+
+az keyvault create \
+  -n $KV_NAME \
+  -g $RG \
+  -l $LOCATION \
+  --sku standard \
+  --retention-days 7
+
+# Allow your own account to manage secrets
+az keyvault set-policy \
+  -n $KV_NAME \
+  --object-id $DEPLOYER_OBJECT_ID \
+  --secret-permissions get list set delete recover backup restore purge
+
+# Create client secret and store it
+CLIENT_SECRET=$(az ad app credential reset \
+  --id $APP_ID \
+  --display-name "obsidian-sync-secret" \
+  --years 10 \
+  --query password -o tsv)
+
+# Allow the sync app to read its own secret
+az keyvault set-policy \
+  -n $KV_NAME \
+  --object-id $SP_OBJECT_ID \
+  --secret-permissions get
+
+az keyvault secret set \
+  --vault-name $KV_NAME \
+  --name "obsidian-sync-client-secret" \
+  --value $CLIENT_SECRET
+```
+
+### Step 7 — Print your config values
+
+```bash
+echo "tenant_id: \"common\""
+echo "client_id: \"${APP_ID}\""
+echo "storage_account_name: \"${STORAGE_ACCOUNT}\""
+echo "container_name: \"${CONTAINER_NAME}\""
+```
+
+Copy these into `~/.obsidian-sync/config.yaml` (see [Configure the sync client](#5--configure-the-sync-client-on-each-machine) below).
+
+---
+
+## Terraform (CI/CD) deployment
+
+> The following steps set up Terraform + GitHub Actions to manage infrastructure automatically.
+> Skip this section if you used the manual CLI deployment above.
 
 ---
 
